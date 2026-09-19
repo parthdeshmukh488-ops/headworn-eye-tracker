@@ -212,12 +212,17 @@ class ScreenLocator:
             The scene-to-screen homography and its reprojection error in screen
             pixels, or ``(None, inf)`` when the frame cannot be trusted.
 
-        Two markers is the working minimum. It gives eight correspondences
-        against eight unknowns — still an exact fit, so the residual is
-        uninformative — but it keeps working when the wearer turns far enough
-        that two markers leave the scene camera's field of view, which happens
-        constantly in practice. Three or more is where the residual starts
-        doing its job.
+        Two markers is the working minimum, and it is already enough for the
+        residual to mean something. Each point correspondence contributes two
+        equations, so two markers give 8 points, 16 equations against 8
+        unknowns. The exactly-determined case — 4 points, 8 equations, zero
+        residual whatever the input — is a single marker's corners, or the four
+        marker *centres* if the corners are thrown away. That is what
+        :class:`ScreenMarkers` refuses to construct and what this design avoids.
+
+        Keeping the minimum at two rather than three matters in practice: the
+        wearer turning their head takes markers out of the scene camera's field
+        of view constantly.
         """
         source, destination = [], []
         for marker_id, screen_corners in self.markers.corners_px.items():

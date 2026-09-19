@@ -13,8 +13,9 @@ only for the core.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 58 tests, no hardware
+pytest                             # 58 tests, no hardware
 python examples/01_end_to_end.py
+python examples/make_figures.py    # redraws docs/figures/
 ```
 
 ---
@@ -33,9 +34,13 @@ trivially thresholdable. This rig puts no emitter next to the eye, which costs:
 
 The detection pipeline is built around those three in that order. The ellipse
 fit is **robust rather than least-squares**, because least-squares is pulled
-badly by exactly the contaminants that survive: a handful of eyelash pixels
-moves a plain conic fit several pixels off centre, which at this geometry is
-about a degree of gaze error.
+badly by exactly the contaminants that survive:
+
+![Trimmed fit against plain least squares](docs/figures/01_pupil_fit.png)
+
+A handful of eyelash pixels drags the plain conic fit off centre. Trimming the
+worst-fitting fraction and refitting costs three extra iterations and recovers
+the centre to a tenth of a pixel.
 
 ---
 
@@ -55,6 +60,8 @@ a homography is not an approximation here — it is the exact model. And because
 head pose lives entirely in that stage, the fitted stage never has to account
 for where the head is.
 
+![Scene camera to screen, through the homography](docs/figures/02_screen_mapping.png)
+
 Caching the homography is the bug. The whole point of a head-worn rig is that
 the head moves; a homography from one head pose is wrong for every other one.
 
@@ -62,21 +69,24 @@ the head moves; a homography from one head pose is wrong for every other one.
 
 ## The over-determination problem
 
-A homography has eight degrees of freedom. Four point correspondences give
-eight equations, so **four markers' centres always fit exactly — including
-nonsense ones.** The residual is zero whatever you feed it, so it cannot tell
-you a marker was mislabelled or detected in the wrong place.
+A homography has eight degrees of freedom, and each point correspondence
+contributes two equations. So **four points — the four marker centres — fit
+exactly, including nonsense ones.** The residual is zero whatever you feed it,
+and it cannot tell you a marker was mislabelled or detected in the wrong place.
 
 ArUco detectors return four corners per marker anyway, so this repo keeps all
-of them: four markers give sixteen correspondences against eight unknowns, and
-reprojection error finally carries information. There are tests for a displaced
-marker and for two swapped markers, and both are caught. There is also a test
-asserting that four correspondences fit anything exactly, so the reason for the
-design cannot quietly be forgotten.
+of them. Four markers become sixteen points, thirty-two equations against eight
+unknowns, and reprojection error finally carries information:
 
-Two markers still work — the wearer turning their head takes markers out of
-frame constantly — but at two the system is exactly determined again and the
-residual goes quiet. That is stated in the docstring rather than hidden.
+![Centres are blind, corners are not](docs/figures/03_overdetermination.png)
+
+There are tests for a displaced marker and for two swapped markers, and both
+are caught. There is also a test asserting that four correspondences fit
+anything exactly, so the reason for the design cannot quietly be forgotten.
+
+Two markers is the working minimum — the wearer turning their head takes
+markers out of frame constantly — and at two the system is already
+over-determined, so the check still works.
 
 ---
 
@@ -97,6 +107,8 @@ Test: 200 gaze points, head pose different on every frame
   accuracy, median       2.54 deg
   accuracy, p95          5.98 deg
 ```
+
+![In-sample against leave-one-out, per calibration point](docs/figures/04_calibration_honesty.png)
 
 Three things in that output worth reading carefully:
 
@@ -165,6 +177,9 @@ src/headgaze/
   mapping.py    fitted eye-to-scene map, cross-validation, slippage
 hardware/
   frame.scad    parametric glasses frame, three printable parts
+examples/
+  01_end_to_end.py   the numbers above
+  make_figures.py    the figures above
 ```
 
 ---

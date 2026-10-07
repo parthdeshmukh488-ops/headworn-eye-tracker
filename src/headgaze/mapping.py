@@ -146,6 +146,26 @@ class EyeToSceneMap:
         predicted = self.predict(pupil_xy)
         return np.linalg.norm(predicted - np.atleast_2d(scene_xy), axis=1)
 
+    def to_dict(self) -> dict:
+        """Plain-JSON form, so a calibration survives between sessions."""
+        if not self.fitted:
+            raise RuntimeError("map is not fitted; nothing to save")
+        return {
+            "degree": self.degree,
+            "ridge": self.ridge,
+            "coefficients": self._coefficients.tolist(),
+            "pupil_mean": self._pupil_mean.tolist(),
+            "pupil_scale": self._pupil_scale.tolist(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> EyeToSceneMap:
+        model = cls(degree=int(data["degree"]), ridge=float(data["ridge"]))
+        model._coefficients = np.asarray(data["coefficients"], dtype=float)
+        model._pupil_mean = np.asarray(data["pupil_mean"], dtype=float)
+        model._pupil_scale = np.asarray(data["pupil_scale"], dtype=float)
+        return model
+
 
 def cross_validated_residuals(
     pupil_xy: np.ndarray,

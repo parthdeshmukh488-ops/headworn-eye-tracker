@@ -8,13 +8,16 @@ The frame is parametric OpenSCAD rather than a dropped STL, so the numbers that
 decide whether it fits a given face and a given camera are editable and
 readable.
 
-**Status:** personal project, rebuilt and published 2026. Python 3.10+, numpy
-only for the core.
+**Status:** software only, so far. The frame has not been printed and no real
+eye has been recorded yet; every number on this page comes from synthetic data.
+The live tools for a real rig are in place (see *From images to gaze, live*).
+Python 3.10+, numpy only for the core, OpenCV for everything camera-side.
 
 ```bash
-pip install -e ".[dev]"
-pytest                             # 58 tests, no hardware
-python examples/01_end_to_end.py
+pip install -e ".[dev,camera]"
+pytest                             # 74 tests, no hardware
+python examples/01_end_to_end.py   # the geometry, from pupil positions
+python examples/02_image_pipeline.py   # the same chain, from images
 python examples/make_figures.py    # redraws docs/figures/
 ```
 
@@ -124,6 +127,58 @@ Three things in that output worth reading carefully:
 
 ---
 
+## From images to gaze, live
+
+Example 01 starts from pupil *positions*. A real rig starts from *images*, so
+`detect.py` turns an eye frame into a pupil and `aruco.py` turns a scene frame
+into marker corners.
+
+**Finding the pupil.** A single "darkest x %" threshold does not work: how much
+of the frame the pupil covers depends on the rig, the person and the light. A
+low threshold keeps only the pupil's dark core; the next one up already merges
+lashes and iris. So the detector tries several dark fractions, fits an ellipse
+to each plausible blob, keeps the darkest blob that fits and stands out from
+its surround as a **seed**, then thresholds again **halfway between the seed's
+grey level and its surround's**, which cuts at the pupil's actual edge. A blob
+that is not clearly darker than the ring around it is never accepted, so a
+blink or a blank frame is a dropout, not a guess.
+
+`python examples/02_image_pipeline.py`, synthetic eyes with glints and lashes,
+and a rendered marker screen seen through a tilted scene camera:
+
+```
+Pupil detection, 200 synthetic eyes per iris colour (glints and lashes on)
+  dark brown  centre error median 0.22 px, p95 0.96 px, dropouts 0/200
+  brown       centre error median 0.25 px, p95 1.17 px, dropouts 0/200
+  light blue  centre error median 0.20 px, p95 0.92 px, dropouts 0/200
+
+Full chain from images, head pose different on every frame
+  calibration, leave-one-dot-out   2.1 scene px (max 4.3)
+  validation accuracy              0.08 deg
+  validation precision (RMS-S2S)   0.21 deg
+  data loss                        0.0 %
+```
+
+These numbers say the code is right, not that a printed rig reaches 0.08°.
+Synthetic eyes have clean edges and no lids; a real eye under room light will
+be much worse, and only a recorded session can say by how much.
+
+**The live tools** (`python -m headgaze ...`, eye and scene camera given by index
+or as a recorded video):
+
+| Command | What it does |
+|---|---|
+| `print-markers` | A 300 dpi page with the four markers at real size, to tape on the screen corners |
+| `preview` | Fullscreen marker screen with both camera views: is the pupil found, are the markers seen? |
+| `calibrate` | Nine dots; fits the eye-to-scene map, reports leave-one-dot-out error, saves `data/calibration.json` |
+| `validate` | Nine *other* dots; accuracy, precision and data loss in degrees, saved to `results/` |
+| `serve` | Streams gaze over UDP in the format of [gaze-robot-camera](https://github.com/parthdeshmukh488-ops/gaze-robot-camera-mujoco), so the headset can steer the robot camera |
+
+The session protocol for a first real recording, including the slippage test, is
+in [docs/SESSION_PROTOCOL.md](docs/SESSION_PROTOCOL.md).
+
+---
+
 ## The frame
 
 `hardware/frame.scad` — parametric, three printable parts.
@@ -139,10 +194,11 @@ pitch. One eye camera, not two: gaze is conjugate for anything beyond arm's
 length, so a second doubles the weight, cabling and synchronisation for very
 little.
 
-**Print in PETG, not PLA.** The frame sits on a face for an hour at a time, and
-PLA softens enough at skin temperature over that period to let the eye arm
-droop — which shows up as slow gaze drift that looks exactly like calibration
-decay and is not.
+**Prefer PETG to PLA.** PETG tolerates heat better (a warm room, a sunny desk)
+and creeps less under a constant load. That matters for the eye arm: if it
+sags even slightly, gaze drifts slowly, which looks exactly like calibration
+decay and is not. This is a design choice from material properties; the frame
+has not yet been printed or worn.
 
 ---
 
@@ -161,9 +217,11 @@ decay and is not.
 - **No blink detection beyond the confidence score.** A fit that looks like an
   eyelid edge scores low and is treated as a dropout; there is no dedicated
   blink classifier.
-- **Detection itself is not benchmarked on real eye images.** The tests use
-  synthetic ellipses degraded in the three ways described above. That validates
-  the fitting, not the thresholding, on real skin and real lashes.
+- **Detection is not benchmarked on real eye images yet.** The tests use
+  synthetic eye images degraded in the three ways described above. That
+  validates the pipeline, not its behaviour on real skin, lids and lashes.
+- **Nothing has run on hardware yet.** The camera code is tested on replayed
+  synthetic videos, not on two real USB cameras.
 - **Monocular.** No vergence, so no depth of gaze.
 
 ---
@@ -172,15 +230,35 @@ decay and is not.
 
 ```
 src/headgaze/
-  pupil.py      visible-light pupil detection and robust ellipse fitting
+  pupil.py      visible-light pupil detection pieces and robust ellipse fitting
   screen.py     ArUco marker layout, homography, per-frame screen locator
-  mapping.py    fitted eye-to-scene map, cross-validation, slippage
+  mapping.py    fitted eye-to-scene map, cross-validation, slippage, save/load
+  metrics.py    accuracy, precision and data loss in degrees of visual angle
+  stream.py     gaze over UDP, One Euro filter
+  detect.py     eye image -> pupil (OpenCV)
+  aruco.py      drawing and detecting the screen markers (OpenCV)
+  session.py    one frame pair -> one gaze sample; calibration and validation
+  live.py       two cameras and the fullscreen display (OpenCV)
+  synthetic.py  synthetic eye images for tests and examples
+  __main__.py   the live tools
 hardware/
   frame.scad    parametric glasses frame, three printable parts
 examples/
-  01_end_to_end.py   the numbers above
-  make_figures.py    the figures above
+  01_end_to_end.py     the geometry numbers above
+  02_image_pipeline.py the image-level numbers above
+  make_figures.py      the figures above
+docs/
+  SESSION_PROTOCOL.md  parts list and the first real recording
+  AUDIT.md             what was checked on 7 Oct 2026, and what changed
 ```
+
+---
+
+## Built with AI assistance
+
+Large parts of this repository were written with AI coding tools (Claude). The
+author reviewed it and can explain how each part works; see
+[EXPLAIN.md](EXPLAIN.md) for the plain-English version.
 
 ---
 

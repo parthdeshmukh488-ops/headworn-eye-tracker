@@ -26,6 +26,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          # Headless OpenCV: the camera-side tests (pupil, ArUco, replayed sessions) run
+          # without a display. Locally, the `camera` extra installs the GUI build.
+          python -m pip install opencv-python-headless
 
       - name: Lint
         run: ruff check src tests
@@ -41,3 +44,4 @@ jobs:
       - name: Run examples
         run: |
           python examples/01_end_to_end.py
+          python examples/02_image_pipeline.py
